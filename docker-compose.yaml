@@ -1,0 +1,124 @@
+services:
+  account_db:
+    build:
+      context: ./account
+      dockerfile: db.dockerfile
+    environment:
+      POSTGRES_DB: account
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - account_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d account"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.4
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - elasticsearch_v9_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  order_db:
+    build:
+      context: ./order
+      dockerfile: db.dockerfile
+    environment:
+      POSTGRES_DB: order
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - order_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d order"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  account:
+    build:
+      context: .
+      dockerfile: account/app.dockerfile
+    environment:
+      BOOTSTRAP_OPERATOR_NAME: ${BOOTSTRAP_OPERATOR_NAME:-operator}
+      BOOTSTRAP_OPERATOR_PASSWORD: ${BOOTSTRAP_OPERATOR_PASSWORD:-change-me-in-development}
+      DATABASE_URL: postgres://postgres:postgres@account_db:5432/account?sslmode=disable
+    depends_on:
+      account_db:
+        condition: service_healthy
+    expose:
+      - "8080"
+
+  product:
+    build:
+      context: .
+      dockerfile: product/app.dockerfile
+    environment:
+      DATABASE_URL: http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    expose:
+      - "8081"
+
+  order:
+    build:
+      context: .
+      dockerfile: order/app.dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@order_db:5432/order?sslmode=disable
+      ACCOUNT_SERVICES_URL: account:8080
+      PRODUCT_SERVICES_URL: product:8081
+    depends_on:
+      order_db:
+        condition: service_healthy
+      account:
+        condition: service_started
+      product:
+        condition: service_started
+    expose:
+      - "8082"
+
+  graphql:
+    build:
+      context: .
+      dockerfile: graphql/app.dockerfile
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-development-only-change-this-secret}
+      ACCOUNT_SERVICES_URL: account:8080
+      PRODUCT_SERVICES_URL: product:8081
+      ORDER_SERVICES_URL: order:8082
+    depends_on:
+      account:
+        condition: service_started
+      product:
+        condition: service_started
+      order:
+        condition: service_started
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/app.dockerfile
+    depends_on:
+      graphql:
+        condition: service_started
+    ports:
+      - "5173:80"
+
+volumes:
+  account_db_data:
+  elasticsearch_v9_data:
+  order_db_data:

@@ -1,0 +1,17 @@
+.DS_Store
+
+# Go build and test artifacts
+*.test
+coverage.out
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+
+# Local compiled service binary
+graphql/graphql
+
+# Local environment files
+.env
+.env.*
+!.env.example
