@@ -1,0 +1,21 @@
+
+services:
+  account:
+    image: ghcr.io/tarun0306/micro-stack-account:latest
+    build: !reset null
+
+  product:
+    image: ghcr.io/tarun0306/micro-stack-product:latest
+    build: !reset null
+
+  order:
+    image: ghcr.io/tarun0306/micro-stack-order:latest
+    build: !reset null
+
+  graphql:
+    image: ghcr.io/tarun0306/micro-stack-graphql:latest
+    build: !reset null
+
+  frontend:
+    image: ghcr.io/tarun0306/micro-stack-frontend:latest
+    build: !reset null
