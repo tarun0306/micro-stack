@@ -9,7 +9,7 @@ COPY account ./account
 COPY order ./order
 COPY product ./product
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /order-service ./order/cmd/order
+RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=1 go build -p 1 -o /order-service ./order/cmd/order
 
 FROM alpine:3.22
 
