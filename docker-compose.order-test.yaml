@@ -1,0 +1,5 @@
+
+services:
+  order:
+    image: ghcr.io/tarun0306/micro-stack-order:latest
+    build: !reset null
