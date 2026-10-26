@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/tarun0306/go-grpc-graphql-microservice/account/pb"
+	"github.com/tarun0306/go-grpc-graphql-microservice/internal/logging"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -20,7 +21,7 @@ func ListenGRPC(s Service, port int) error {
 	if err != nil {
 		return err
 	}
-	serv := grpc.NewServer()
+	serv := grpc.NewServer(grpc.UnaryInterceptor(logging.UnaryServerInterceptor("account")))
 	pb.RegisterAccountServiceServer(serv, &grpcServer{service: s})
 	reflection.Register(serv)
 	return serv.Serve(lis)

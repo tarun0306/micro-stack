@@ -2,6 +2,7 @@ package order
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/segmentio/ksuid"
@@ -37,6 +38,7 @@ func NewService(r Repository) Service {
 }
 
 func (s *orderService) PostOrder(ctx context.Context, accountID string, products []OrderedProducts) (*Order, error) {
+	log.Printf("service=order operation=PostOrder account_id=%q products=%d", accountID, len(products))
 	o := &Order{
 		ID:        ksuid.New().String(),
 		CreatedAt: time.Now(),
@@ -54,6 +56,7 @@ func (s *orderService) PostOrder(ctx context.Context, accountID string, products
 	return o, err
 }
 func (s *orderService) GetOrdersForAccount(ctx context.Context, accountID string) ([]Order, error) {
+	log.Printf("service=order operation=GetOrdersForAccount account_id=%q", accountID)
 
 	orders, err := s.repository.GetOrdersForAccount(ctx, accountID)
 	if err != nil {

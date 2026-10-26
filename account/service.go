@@ -3,6 +3,7 @@ package account
 import (
 	"context"
 	"errors"
+	"log"
 
 	"github.com/segmentio/ksuid"
 	"golang.org/x/crypto/bcrypt"
@@ -32,6 +33,7 @@ func NewService(r Repository) Service {
 }
 
 func (s *accountService) PostAccount(ctx context.Context, name, password string) (*Account, error) {
+	log.Printf("service=account operation=PostAccount name=%q", name)
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
@@ -49,6 +51,7 @@ func (s *accountService) PostAccount(ctx context.Context, name, password string)
 }
 
 func (s *accountService) Login(ctx context.Context, name, password string) (*Account, error) {
+	log.Printf("service=account operation=Login name=%q", name)
 	a, err := s.repository.GetAccountByName(ctx, name)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(a.PasswordHash), []byte(password)) != nil {
 		return nil, errors.New("invalid credentials")
@@ -57,6 +60,7 @@ func (s *accountService) Login(ctx context.Context, name, password string) (*Acc
 }
 
 func (s *accountService) BootstrapOperator(ctx context.Context, name, password string) error {
+	log.Printf("service=account operation=BootstrapOperator name=%q", name)
 	if name == "" || password == "" {
 		return nil
 	}
@@ -76,6 +80,7 @@ func (s *accountService) BootstrapOperator(ctx context.Context, name, password s
 }
 
 func (s *accountService) GetAccount(ctx context.Context, id string) (*Account, error) {
+	log.Printf("service=account operation=GetAccount id=%q", id)
 	a, err := s.repository.GetAccountByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -83,6 +88,7 @@ func (s *accountService) GetAccount(ctx context.Context, id string) (*Account, e
 	return a, nil
 }
 func (s *accountService) GetAccounts(ctx context.Context, skip uint64, take uint64) ([]Account, error) {
+	log.Printf("service=account operation=GetAccounts skip=%d take=%d", skip, take)
 	if take > 100 || (skip == 0 && take == 0) {
 		take = 100
 	}

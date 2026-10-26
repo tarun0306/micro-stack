@@ -3,9 +3,9 @@ package product
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 
+	"github.com/tarun0306/go-grpc-graphql-microservice/internal/logging"
 	"github.com/tarun0306/go-grpc-graphql-microservice/product/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -21,7 +21,7 @@ func ListenGrpc(s Service, port int) error {
 	if err != nil {
 		return err
 	}
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.UnaryInterceptor(logging.UnaryServerInterceptor("product")))
 	pb.RegisterProductServiceServer(server, &grpcServer{
 		UnimplementedProductServiceServer: pb.UnimplementedProductServiceServer{},
 		service:                           s})
@@ -66,7 +66,6 @@ func (s *grpcServer) GetProducts(ctx context.Context, req *pb.GetProductsRequest
 		res, err = s.service.GetProducts(ctx, req.Skip, req.Take)
 	}
 	if err != nil {
-		log.Println(err)
 		return nil, err
 	}
 	products := []*pb.Product{}

@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/tarun0306/go-grpc-graphql-microservice/account"
+	"github.com/tarun0306/go-grpc-graphql-microservice/internal/logging"
 	"github.com/tarun0306/go-grpc-graphql-microservice/order/pb"
 	"github.com/tarun0306/go-grpc-graphql-microservice/product"
 	"google.golang.org/grpc"
@@ -40,7 +41,7 @@ func ListenGRPC(s Service, accountURL, productURL string, port int) error {
 	}
 	defer listener.Close()
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.UnaryInterceptor(logging.UnaryServerInterceptor("order")))
 	pb.RegisterOrderServiceServer(server, &grpcServer{
 		service:       s,
 		accountClient: accountClient,

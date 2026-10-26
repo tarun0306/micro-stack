@@ -2,6 +2,7 @@ package product
 
 import (
 	"context"
+	"log"
 
 	"github.com/segmentio/ksuid"
 )
@@ -28,6 +29,7 @@ func NewService(r Repository) Service {
 }
 
 func (s *productService) PostProduct(ctx context.Context, name, description string, price float64) (*Product, error) {
+	log.Printf("service=product operation=PostProduct name=%q price=%f", name, price)
 	prod := &Product{
 		Id:          ksuid.New().String(),
 		Name:        name,
@@ -42,6 +44,7 @@ func (s *productService) PostProduct(ctx context.Context, name, description stri
 }
 
 func (s *productService) GetProduct(ctx context.Context, id string) (*Product, error) {
+	log.Printf("service=product operation=GetProduct id=%q", id)
 
 	p, err := s.repository.GetProductByID(ctx, id)
 	if err != nil {
@@ -51,6 +54,7 @@ func (s *productService) GetProduct(ctx context.Context, id string) (*Product, e
 }
 
 func (s *productService) GetProducts(ctx context.Context, skip uint64, take uint64) ([]Product, error) {
+	log.Printf("service=product operation=GetProducts skip=%d take=%d", skip, take)
 	if take > 100 || (skip == 0 && take == 0) {
 		take = 100
 	}
@@ -62,6 +66,7 @@ func (s *productService) GetProducts(ctx context.Context, skip uint64, take uint
 }
 
 func (s *productService) GetProductByIDs(ctx context.Context, ids []string) ([]Product, error) {
+	log.Printf("service=product operation=GetProductByIDs ids=%d", len(ids))
 
 	products, err := s.repository.ListProductsWithIDs(ctx, ids)
 	if err != nil {
@@ -72,6 +77,7 @@ func (s *productService) GetProductByIDs(ctx context.Context, ids []string) ([]P
 }
 
 func (s *productService) SearchProducts(ctx context.Context, query string, skip uint64, take uint64) ([]Product, error) {
+	log.Printf("service=product operation=SearchProducts query=%q skip=%d take=%d", query, skip, take)
 	if take > 100 || (skip == 0 && take == 0) {
 		take = 100
 	}

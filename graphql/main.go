@@ -7,6 +7,7 @@ import (
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/playground"
+	"github.com/tarun0306/go-grpc-graphql-microservice/internal/logging"
 )
 
 type AppConfig struct {
@@ -28,8 +29,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	http.Handle("/graphql", authMiddleware(s.jwtSecret, handler.NewDefaultServer(s.ToExecutableSchema())))
-	http.Handle("/playground", playground.Handler("tarun", "/graphql"))
+	http.Handle("/graphql", logging.HTTPMiddleware("graphql", authMiddleware(s.jwtSecret, handler.NewDefaultServer(s.ToExecutableSchema()))))
+	http.Handle("/playground", logging.HTTPMiddleware("graphql", playground.Handler("tarun", "/graphql")))
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 
