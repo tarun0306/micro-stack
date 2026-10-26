@@ -9,6 +9,7 @@ COPY account ./account
 COPY order ./order
 COPY product ./product
 COPY graphql ./graphql
+COPY internal ./internal
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /graphql-service ./graphql
 

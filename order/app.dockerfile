@@ -8,6 +8,7 @@ RUN go mod download
 COPY account ./account
 COPY order ./order
 COPY product ./product
+COPY internal ./internal
 
 RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=1 go build -p 1 -o /order-service ./order/cmd/order
 
