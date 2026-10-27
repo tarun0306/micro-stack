@@ -1,8 +1,15 @@
 
 services:
+  account_db: !reset null
+
   account:
     image: ghcr.io/tarun0306/micro-stack-account:latest
     build: !reset null
+    environment:
+      DATABASE_URL: ${ACCOUNT_DATABASE_URL:?ACCOUNT_DATABASE_URL must be set}
+    depends_on: !reset []
+    volumes:
+      - ./certs/global-bundle.pem:/certs/global-bundle.pem:ro
 
   product:
     image: ghcr.io/tarun0306/micro-stack-product:latest
