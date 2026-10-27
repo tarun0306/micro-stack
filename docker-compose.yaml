@@ -64,7 +64,7 @@ services:
       context: .
       dockerfile: product/app.dockerfile
     environment:
-      DATABASE_URL: http://elasticsearch:9200
+      OPENSEARCH_URL: http://elasticsearch:9200
     depends_on:
       elasticsearch:
         condition: service_healthy

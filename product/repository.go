@@ -1,12 +1,14 @@
 package product
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
-	elastic "github.com/elastic/go-elasticsearch/v9"
-	"github.com/elastic/go-elasticsearch/v9/typedapi/types"
+	"github.com/opensearch-project/opensearch-go/v4"
+	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 )
 
 var (
@@ -22,8 +24,8 @@ type Repository interface {
 	SearchProducts(ctx context.Context, query string, skip uint64, take uint64) ([]Product, error)
 }
 
-type elasticRepository struct {
-	client *elastic.TypedClient
+type openSearchRepository struct {
+	client *opensearchapi.Client
 }
 type productDocument struct {
 	Name        string  `json:"name"`
@@ -31,32 +33,50 @@ type productDocument struct {
 	Price       float64 `json:"price"`
 }
 
-func NewElasticRepository(url string) (Repository, error) {
-	client, err := elastic.NewTyped(
-		elastic.WithAddresses(url),
-	)
+func NewOpenSearchRepository(url string) (Repository, error) {
+	client, err := opensearchapi.NewClient(opensearchapi.Config{
+		Client: opensearch.Config{
+			Addresses:      []string{url},
+			RequestTimeout: 5 * time.Second,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &elasticRepository{client}, nil
+	if _, err := client.Info(context.Background(), nil); err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+	return &openSearchRepository{client}, nil
 }
 
-func (r *elasticRepository) Close() {}
+func (r *openSearchRepository) Close() {
+	_ = r.client.Close()
+}
 
-func (r *elasticRepository) PutProduct(ctx context.Context, p Product) error {
-	_, err := r.client.
-		Index("catalog").
-		Id(p.Id).Document(productDocument{
+func (r *openSearchRepository) PutProduct(ctx context.Context, p Product) error {
+	body, err := json.Marshal(productDocument{
 		Name:        p.Name,
 		Description: p.Description,
 		Price:       p.Price,
-	}).Do(ctx)
+	})
+	if err != nil {
+		return err
+	}
 
+	_, err = r.client.Index(ctx, opensearchapi.IndexReq{
+		Index:      "catalog",
+		DocumentID: p.Id,
+		Body:       bytes.NewReader(body),
+	})
 	return err
 
 }
-func (r *elasticRepository) GetProductByID(ctx context.Context, id string) (*Product, error) {
-	res, err := r.client.Get("catalog", id).Do(ctx)
+func (r *openSearchRepository) GetProductByID(ctx context.Context, id string) (*Product, error) {
+	res, err := r.client.Document.Get(ctx, opensearchapi.DocumentGetReq{
+		Index:      "catalog",
+		DocumentID: id,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +85,7 @@ func (r *elasticRepository) GetProductByID(ctx context.Context, id string) (*Pro
 	}
 
 	p := productDocument{}
-	if err := json.Unmarshal(res.Source_, &p); err != nil {
+	if err := json.Unmarshal(res.Source, &p); err != nil {
 		return nil, err
 	}
 	return &Product{
@@ -76,21 +96,31 @@ func (r *elasticRepository) GetProductByID(ctx context.Context, id string) (*Pro
 	}, nil
 
 }
-func (r *elasticRepository) ListProducts(ctx context.Context, skip uint64, take uint64) ([]Product, error) {
-	res, err := r.client.Search().
-		From(int(skip)).
-		Size(int(take)).
-		Do(ctx)
+func (r *openSearchRepository) ListProducts(ctx context.Context, skip uint64, take uint64) ([]Product, error) {
+	body, err := json.Marshal(map[string]any{
+		"from": skip,
+		"size": take,
+		"query": map[string]any{
+			"match_all": map[string]any{},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	res, err := r.client.Search(ctx, &opensearchapi.SearchReq{
+		Indices: []string{"catalog"},
+		Body:    bytes.NewReader(body),
+	})
 	if err != nil {
 		return nil, err
 	}
 	products := []Product{}
 
-	for _, hits := range res.Hits.Hits {
+	for _, hit := range res.Hits.Hits {
 		p := productDocument{}
-		if err = json.Unmarshal(hits.Source_, &p); err == nil {
+		if err = json.Unmarshal(hit.Source, &p); err == nil {
 			products = append(products, Product{
-				Id:          *hits.Id_,
+				Id:          hit.ID,
 				Name:        p.Name,
 				Description: p.Description,
 				Price:       p.Price,
@@ -100,28 +130,30 @@ func (r *elasticRepository) ListProducts(ctx context.Context, skip uint64, take 
 	return products, nil
 
 }
-func (r *elasticRepository) ListProductsWithIDs(ctx context.Context, ids []string) ([]Product, error) {
-	items, err := r.client.Mget().Index("catalog").Ids(ids...).Do(ctx)
+func (r *openSearchRepository) ListProductsWithIDs(ctx context.Context, ids []string) ([]Product, error) {
+	body, err := json.Marshal(map[string]any{"ids": ids})
+	if err != nil {
+		return nil, err
+	}
+	items, err := r.client.MGet(ctx, opensearchapi.MGetReq{
+		Index: "catalog",
+		Body:  bytes.NewReader(body),
+	})
 	if err != nil {
 		return nil, err
 	}
 	products := make([]Product, 0, len(items.Docs))
 
 	for _, item := range items.Docs {
-
-		getRes, ok := item.(*types.GetResult)
-		if !ok {
-			return nil, ErrNotFound
-		}
-		if !getRes.Found {
+		if !item.Found {
 			return nil, ErrNotFound
 		}
 		productDocument := productDocument{}
-		if err := json.Unmarshal(getRes.Source_, &productDocument); err != nil {
+		if err := json.Unmarshal(item.Source, &productDocument); err != nil {
 			return nil, err
 		}
 		products = append(products, Product{
-			Id:          getRes.Id_,
+			Id:          item.ID,
 			Name:        productDocument.Name,
 			Description: productDocument.Description,
 			Price:       productDocument.Price,
@@ -129,21 +161,30 @@ func (r *elasticRepository) ListProductsWithIDs(ctx context.Context, ids []strin
 	}
 	return products, nil
 }
-func (r *elasticRepository) SearchProducts(ctx context.Context, query string, skip uint64, take uint64) ([]Product, error) {
-	res, err := r.client.Search().
-		Q(query).
-		From(int(skip)).
-		Size(int(take)).
-		Do(ctx)
+func (r *openSearchRepository) SearchProducts(ctx context.Context, query string, skip uint64, take uint64) ([]Product, error) {
+	body, err := json.Marshal(map[string]any{
+		"from": skip,
+		"size": take,
+		"query": map[string]any{
+			"query_string": map[string]string{"query": query},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	res, err := r.client.Search(ctx, &opensearchapi.SearchReq{
+		Indices: []string{"catalog"},
+		Body:    bytes.NewReader(body),
+	})
 	if err != nil {
 		return nil, err
 	}
 	products := []Product{}
 	for _, hit := range res.Hits.Hits {
 		p := productDocument{}
-		if err = json.Unmarshal(hit.Source_, &p); err == nil {
+		if err = json.Unmarshal(hit.Source, &p); err == nil {
 			products = append(products, Product{
-				Id:          *hit.Id_,
+				Id:          hit.ID,
 				Name:        p.Name,
 				Description: p.Description,
 				Price:       p.Price,

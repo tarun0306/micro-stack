@@ -6,6 +6,7 @@ require github.com/99designs/gqlgen v0.17.90
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/opensearch-project/opensearch-go/v4 v4.8.1
 	github.com/vektah/gqlparser/v2 v2.5.33
 	golang.org/x/crypto v0.58.0
 	google.golang.org/grpc v1.83.2
@@ -13,17 +14,9 @@ require (
 )
 
 require (
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/elastic/elastic-transport-go/v8 v8.9.0 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
-	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
-	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/otel v1.44.0 // indirect
-	go.opentelemetry.io/otel/metric v1.44.0 // indirect
-	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
@@ -31,7 +24,6 @@ require (
 
 require (
 	github.com/agnivade/levenshtein v1.2.1 // indirect
-	github.com/elastic/go-elasticsearch/v9 v9.5.2
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/lib/pq v1.12.3
