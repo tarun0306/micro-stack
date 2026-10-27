@@ -11,6 +11,8 @@ services:
     volumes:
       - ./certs/global-bundle.pem:/certs/global-bundle.pem:ro
 
+  order_db: !reset null
+
   product:
     image: ghcr.io/tarun0306/micro-stack-product:latest
     build: !reset null
@@ -18,6 +20,11 @@ services:
   order:
     image: ghcr.io/tarun0306/micro-stack-order:latest
     build: !reset null
+    environment:
+      DATABASE_URL: ${ORDER_DATABASE_URL:?ORDER_DATABASE_URL must be set}
+    depends_on: !reset []
+    volumes:
+      - ./certs/global-bundle.pem:/certs/global-bundle.pem:ro
 
   graphql:
     image: ghcr.io/tarun0306/micro-stack-graphql:latest
