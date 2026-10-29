@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Activity, ArrowUpRight, Boxes, CirclePlus, Package, RefreshCw, ShoppingBag, Users } from 'lucide-react'
-import { accountsQuery, productsQuery, request, viewerQuery, type Account, type Product } from './api'
+import { accountsQuery, isAuthenticationError, productsQuery, request, viewerQuery, type Account, type Product } from './api'
 
 type View = 'overview' | 'orders' | 'catalog' | 'accounts'
 
@@ -20,7 +20,7 @@ function Landing() {
   </main>
 }
 
-function Login({ onLogin }: { onLogin: () => void }) {
+function Login({ onLogin }: { onLogin: (destination: string) => void }) {
   const [registering, setRegistering] = useState(false)
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
@@ -48,11 +48,12 @@ function Login({ onLogin }: { onLogin: () => void }) {
       )
       localStorage.setItem('microstack_token', data.login.token)
       const returnTo = new URLSearchParams(window.location.search).get('returnTo')
-      if (returnTo?.startsWith('/')) {
+      if (returnTo?.startsWith('/') && !returnTo.startsWith('//')) {
         window.location.replace(returnTo)
         return
       }
-      onLogin()
+      const { viewer } = await request<{ viewer: { role: Account['role'] } }>(viewerQuery)
+      onLogin(viewer.role === 'OPERATOR' ? '/console' : '/shop')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not sign in')
     } finally {
@@ -72,18 +73,24 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [checkingAccess, setCheckingAccess] = useState(() => (
+    Boolean(localStorage.getItem('microstack_token')) &&
+    (window.location.pathname === '/login' || window.location.pathname === '/console')
+  ))
 
   useEffect(() => {
-    if (!authenticated || window.location.pathname !== '/console') return
+    const pathname = window.location.pathname
+    if (!authenticated || (pathname !== '/console' && pathname !== '/login')) return
     let active = true
-    setLoading(true)
     request<{ viewer: Account }>(viewerQuery)
       .then((viewerData) => {
         if (!active) return
-        if (viewerData.viewer.role === 'CUSTOMER') {
-          window.location.replace('/shop')
-          return Promise.reject(new Error('redirecting'))
+        if (pathname === '/login' || viewerData.viewer.role === 'CUSTOMER') {
+          window.location.replace(viewerData.viewer.role === 'OPERATOR' ? '/console' : '/shop')
+          return
         }
+        setCheckingAccess(false)
+        setLoading(true)
         return Promise.all([
           request<{ accounts: Account[] }>(accountsQuery),
           request<{ products: Product[] }>(productsQuery),
@@ -97,7 +104,17 @@ function App() {
         setSelectedAccount((current) => current || accountData.accounts.find((account) => account.role === 'CUSTOMER')?.id || accountData.accounts[0]?.id || '')
         setError('')
       })
-      .catch((reason: Error) => active && reason.message !== 'redirecting' && setError(reason.message))
+      .catch((reason: Error) => {
+        if (!active) return
+        if (isAuthenticationError(reason)) {
+          localStorage.removeItem('microstack_token')
+          setAuthenticated(false)
+          window.location.replace(`/login?returnTo=${encodeURIComponent(pathname)}`)
+          return
+        }
+        setCheckingAccess(false)
+        setError(reason.message)
+      })
       .finally(() => active && setLoading(false))
     return () => {
       active = false
@@ -113,8 +130,9 @@ function App() {
 
   if (window.location.pathname === '/') return <Landing />
   if (window.location.pathname === '/shop') return <CustomerShop />
-  if (!authenticated && window.location.pathname !== '/login') return <Login onLogin={() => setAuthenticated(true)} />
-  if (!authenticated) return <Login onLogin={() => setAuthenticated(true)} />
+  if (checkingAccess) return <div className="loading"><RefreshCw className="spin" size={22} /> Checking access…</div>
+  if (!authenticated && window.location.pathname !== '/login') return <Login onLogin={(destination) => window.location.replace(destination)} />
+  if (!authenticated) return <Login onLogin={(destination) => window.location.replace(destination)} />
 
     function CustomerShop() {
       const [accounts, setAccounts] = useState<Account[]>([])
@@ -122,6 +140,7 @@ function App() {
       const [accountId, setAccountId] = useState('')
       const [cart, setCart] = useState<Record<string, number>>({})
       const [loading, setLoading] = useState(true)
+      const [placingOrder, setPlacingOrder] = useState(false)
       const [message, setMessage] = useState('')
       const [error, setError] = useState('')
 
@@ -136,8 +155,14 @@ function App() {
                 setAccounts([viewer])
                 setAccountId(viewer.id)
               })
-              .catch(() => {
-                localStorage.removeItem('microstack_token')
+              .catch((reason: unknown) => {
+                if (isAuthenticationError(reason)) {
+                  localStorage.removeItem('microstack_token')
+                  setAccounts([])
+                  setAccountId('')
+                } else {
+                  setError(reason instanceof Error ? reason.message : 'Could not load your account')
+                }
               })
           })
           .catch((reason: Error) => setError(reason.message))
@@ -165,11 +190,13 @@ function App() {
       }
 
       async function placeOrder() {
+        if (placingOrder) return
         if (!localStorage.getItem('microstack_token')) {
           window.location.href = '/login?returnTo=/shop'
           return
         }
         if (!accountId || !cartItems.length) return
+        setPlacingOrder(true)
         try {
           await request(`mutation CreateOrder($order: OrderInput!) { createOrder(order: $order) { id } }`, {
             order: {
@@ -181,6 +208,8 @@ function App() {
           setMessage('Thanks — your order has been placed.')
         } catch (reason) {
           setError(reason instanceof Error ? reason.message : 'Could not place order')
+        } finally {
+          setPlacingOrder(false)
         }
       }
 
@@ -197,7 +226,7 @@ function App() {
           {message && <div className="shop-success">{message}</div>}
           <div className="shop-layout">
             <section><div className="shop-section-title"><p className="eyebrow">The catalog</p><h2>Explore products</h2></div><div className="shop-product-grid">{products.map((product) => <article className="shop-product" key={product.id}><div className="shop-product-art"><Package size={25} /></div><div className="shop-product-info"><div><h3>{product.name}</h3><p>{product.description || 'A carefully selected product for your workflow.'}</p></div><strong>${product.price.toFixed(2)}</strong></div><button className="primary full" onClick={() => addToCart(product.id)}>Add to cart</button></article>)}</div></section>
-            <aside className="cart-panel"><div className="panel-title"><div><p className="eyebrow">Your selection</p><h3>Cart</h3></div><ShoppingBag size={20} /></div>{cartItems.length ? <><div className="cart-items">{cartItems.map(({ product, quantity }) => <div className="cart-item" key={product.id}><div><strong>{product.name}</strong><span>${product.price.toFixed(2)} each</span></div><div className="quantity"><button onClick={() => changeQuantity(product.id, quantity - 1)}>−</button><span>{quantity}</span><button onClick={() => changeQuantity(product.id, quantity + 1)}>+</button></div></div>)}</div><div className="cart-total"><span>Total</span><strong>${total.toFixed(2)}</strong></div><button className="primary full" onClick={placeOrder}>Place order</button></> : <Empty title="Your cart is empty" text="Add a product to get started." />}</aside>
+            <aside className="cart-panel"><div className="panel-title"><div><p className="eyebrow">Your selection</p><h3>Cart</h3></div><ShoppingBag size={20} /></div>{cartItems.length ? <><div className="cart-items">{cartItems.map(({ product, quantity }) => <div className="cart-item" key={product.id}><div><strong>{product.name}</strong><span>${product.price.toFixed(2)} each</span></div><div className="quantity"><button onClick={() => changeQuantity(product.id, quantity - 1)} disabled={placingOrder}>−</button><span>{quantity}</span><button onClick={() => changeQuantity(product.id, quantity + 1)} disabled={placingOrder}>+</button></div></div>)}</div><div className="cart-total"><span>Total</span><strong>${total.toFixed(2)}</strong></div><button className="primary full" onClick={placeOrder} disabled={placingOrder}>{placingOrder ? 'Placing order…' : 'Place order'}</button></> : <Empty title="Your cart is empty" text="Add a product to get started." />}</aside>
           </div>
         </main>
       </div>
@@ -214,12 +243,12 @@ function App() {
           <NavItem icon={<Boxes size={17} />} label="Catalog" active={view === 'catalog'} onClick={() => setView('catalog')} count={products.length} />
           <NavItem icon={<Users size={17} />} label="Accounts" active={view === 'accounts'} onClick={() => setView('accounts')} count={accounts.length} />
         </nav>
-        <div className="sidebar-foot"><span className="status-dot" />All services operational</div>
+        <div className="sidebar-foot"><span className="status-dot" />Live data connected</div>
       </aside>
 
       <main className="content">
         <header className="topbar">
-          <div><p className="eyebrow">Thursday, October 15, 2026</p><h1>{view === 'overview' ? 'Good morning, operator.' : view[0].toUpperCase() + view.slice(1)}</h1></div>
+          <div><p className="eyebrow">{new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date())}</p><h1>{view === 'overview' ? 'Good morning, operator.' : view[0].toUpperCase() + view.slice(1)}</h1></div>
           <button className="icon-button" onClick={() => setRefreshKey((key) => key + 1)} aria-label="Refresh data"><RefreshCw size={18} /></button>
         </header>
         {error && <div className="alert">{error}</div>}

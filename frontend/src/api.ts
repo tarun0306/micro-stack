@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 export type Product = {
   id: string
   name: string
@@ -23,12 +25,19 @@ export type Account = {
 
 type GraphQLResponse<T> = { data?: T; errors?: { message: string }[] }
 
+const graphqlEndpoint = import.meta.env.VITE_GRAPHQL_URL || '/graphql'
+
+export function isAuthenticationError(reason: unknown): boolean {
+  if (!(reason instanceof Error)) return false
+  return /(?:401|403|unauthenticated|unauthorized|authentication|invalid token|token expired|jwt)/i.test(reason.message)
+}
+
 export async function request<T>(
   query: string,
   variables?: Record<string, unknown>,
 ): Promise<T> {
   const token = localStorage.getItem('microstack_token')
-  const response = await fetch('/graphql', {
+  const response = await fetch(graphqlEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -38,6 +47,9 @@ export async function request<T>(
   })
   const payload = (await response.json()) as GraphQLResponse<T>
   if (!response.ok || payload.errors?.length) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(`${response.status} Unauthorized`)
+    }
     throw new Error(payload.errors?.map((error) => error.message).join(', ') ?? 'Request failed')
   }
   if (!payload.data) throw new Error('The API returned no data')
