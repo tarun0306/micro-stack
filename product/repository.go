@@ -1,15 +1,13 @@
 package product
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"database/sql"
 	"errors"
-	"os"
-	"time"
+	"fmt"
+	"strings"
 
-	"github.com/opensearch-project/opensearch-go/v4"
-	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
+	"github.com/lib/pq"
 )
 
 var (
@@ -25,183 +23,110 @@ type Repository interface {
 	SearchProducts(ctx context.Context, query string, skip uint64, take uint64) ([]Product, error)
 }
 
-type openSearchRepository struct {
-	client *opensearchapi.Client
-}
-type productDocument struct {
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Price       float64 `json:"price"`
+type postgresRepository struct {
+	db *sql.DB
 }
 
-func NewOpenSearchRepository(url string) (Repository, error) {
-	username := os.Getenv("OPENSEARCH_USERNAME")
-	password := os.Getenv("OPENSEARCH_PASSWORD")
-
-	if username == "" || password == "" {
-		return nil, errors.New("OpenSearch username or password is missing")
-	}
-
-	client, err := opensearchapi.NewClient(opensearchapi.Config{
-		Client: opensearch.Config{
-			Addresses:      []string{url},
-			Username:       username,
-			Password:       password,
-			RequestTimeout: 5 * time.Second,
-		},
-	})
+func NewPostgresRepository(url string) (Repository, error) {
+	db, err := sql.Open("postgres", url)
 	if err != nil {
 		return nil, err
 	}
-
-	if _, err := client.Info(context.Background(), nil); err != nil {
-		_ = client.Close()
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
-
-	return &openSearchRepository{client: client}, nil
+	return &postgresRepository{db: db}, nil
 }
 
-func (r *openSearchRepository) Close() {
-	_ = r.client.Close()
+func (r *postgresRepository) Close() {
+	_ = r.db.Close()
 }
 
-func (r *openSearchRepository) PutProduct(ctx context.Context, p Product) error {
-	body, err := json.Marshal(productDocument{
-		Name:        p.Name,
-		Description: p.Description,
-		Price:       p.Price,
-	})
-	if err != nil {
-		return err
-	}
-
-	_, err = r.client.Index(ctx, opensearchapi.IndexReq{
-		Index:      "catalog",
-		DocumentID: p.Id,
-		Body:       bytes.NewReader(body),
-	})
+func (r *postgresRepository) PutProduct(ctx context.Context, p Product) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO products (id, name, description, price)
+		VALUES ($1, $2, $3, $4)`,
+		p.Id, p.Name, p.Description, p.Price,
+	)
 	return err
-
 }
-func (r *openSearchRepository) GetProductByID(ctx context.Context, id string) (*Product, error) {
-	res, err := r.client.Document.Get(ctx, opensearchapi.DocumentGetReq{
-		Index:      "catalog",
-		DocumentID: id,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if !res.Found {
+
+func (r *postgresRepository) GetProductByID(ctx context.Context, id string) (*Product, error) {
+	p := &Product{}
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, name, description, price
+		FROM products
+		WHERE id = $1`, id).Scan(&p.Id, &p.Name, &p.Description, &p.Price)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-
-	p := productDocument{}
-	if err := json.Unmarshal(res.Source, &p); err != nil {
+	if err != nil {
 		return nil, err
 	}
-	return &Product{
-		Id:          id,
-		Name:        p.Name,
-		Description: p.Description,
-		Price:       p.Price,
-	}, nil
-
+	return p, nil
 }
-func (r *openSearchRepository) ListProducts(ctx context.Context, skip uint64, take uint64) ([]Product, error) {
-	body, err := json.Marshal(map[string]any{
-		"from": skip,
-		"size": take,
-		"query": map[string]any{
-			"match_all": map[string]any{},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	res, err := r.client.Search(ctx, &opensearchapi.SearchReq{
-		Indices: []string{"catalog"},
-		Body:    bytes.NewReader(body),
-	})
-	if err != nil {
-		return nil, err
-	}
-	products := []Product{}
 
-	for _, hit := range res.Hits.Hits {
-		p := productDocument{}
-		if err = json.Unmarshal(hit.Source, &p); err == nil {
-			products = append(products, Product{
-				Id:          hit.ID,
-				Name:        p.Name,
-				Description: p.Description,
-				Price:       p.Price,
-			})
-		}
-	}
-	return products, nil
-
+func (r *postgresRepository) ListProducts(ctx context.Context, skip uint64, take uint64) ([]Product, error) {
+	return r.queryProducts(ctx, `
+		SELECT id, name, description, price
+		FROM products
+		ORDER BY id DESC
+		OFFSET $1 LIMIT $2`, skip, take)
 }
-func (r *openSearchRepository) ListProductsWithIDs(ctx context.Context, ids []string) ([]Product, error) {
-	body, err := json.Marshal(map[string]any{"ids": ids})
-	if err != nil {
-		return nil, err
-	}
-	items, err := r.client.MGet(ctx, opensearchapi.MGetReq{
-		Index: "catalog",
-		Body:  bytes.NewReader(body),
-	})
-	if err != nil {
-		return nil, err
-	}
-	products := make([]Product, 0, len(items.Docs))
 
-	for _, item := range items.Docs {
-		if !item.Found {
-			return nil, ErrNotFound
-		}
-		productDocument := productDocument{}
-		if err := json.Unmarshal(item.Source, &productDocument); err != nil {
-			return nil, err
-		}
-		products = append(products, Product{
-			Id:          item.ID,
-			Name:        productDocument.Name,
-			Description: productDocument.Description,
-			Price:       productDocument.Price,
-		})
+func (r *postgresRepository) ListProductsWithIDs(ctx context.Context, ids []string) ([]Product, error) {
+	products, err := r.queryProducts(ctx, `
+		WITH requested AS (
+			SELECT id, ordinality
+			FROM unnest($1::varchar[]) WITH ORDINALITY AS input(id, ordinality)
+		)
+		SELECT id, name, description, price
+		FROM requested
+		JOIN products USING (id)
+		ORDER BY requested.ordinality`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	if len(products) != len(ids) {
+		return nil, ErrNotFound
 	}
 	return products, nil
 }
-func (r *openSearchRepository) SearchProducts(ctx context.Context, query string, skip uint64, take uint64) ([]Product, error) {
-	body, err := json.Marshal(map[string]any{
-		"from": skip,
-		"size": take,
-		"query": map[string]any{
-			"query_string": map[string]string{"query": query},
-		},
-	})
-	if err != nil {
-		return nil, err
+
+func (r *postgresRepository) SearchProducts(ctx context.Context, query string, skip uint64, take uint64) ([]Product, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return r.ListProducts(ctx, skip, take)
 	}
-	res, err := r.client.Search(ctx, &opensearchapi.SearchReq{
-		Indices: []string{"catalog"},
-		Body:    bytes.NewReader(body),
-	})
+
+	return r.queryProducts(ctx, `
+		SELECT id, name, description, price
+		FROM products
+		WHERE search_vector @@ websearch_to_tsquery('english', $1)
+		   OR name ILIKE '%' || $1 || '%'
+		   OR description ILIKE '%' || $1 || '%'
+		ORDER BY ts_rank(search_vector, websearch_to_tsquery('english', $1)) DESC, id DESC
+		OFFSET $2 LIMIT $3`, query, skip, take)
+}
+
+func (r *postgresRepository) queryProducts(ctx context.Context, query string, args ...any) ([]Product, error) {
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query products: %w", err)
 	}
-	products := []Product{}
-	for _, hit := range res.Hits.Hits {
-		p := productDocument{}
-		if err = json.Unmarshal(hit.Source, &p); err == nil {
-			products = append(products, Product{
-				Id:          hit.ID,
-				Name:        p.Name,
-				Description: p.Description,
-				Price:       p.Price,
-			})
+	defer rows.Close()
+
+	products := make([]Product, 0)
+	for rows.Next() {
+		p := Product{}
+		if err := rows.Scan(&p.Id, &p.Name, &p.Description, &p.Price); err != nil {
+			return nil, fmt.Errorf("scan product: %w", err)
 		}
+		products = append(products, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate products: %w", err)
 	}
 	return products, nil
 }

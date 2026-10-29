@@ -9,19 +9,19 @@ import (
 )
 
 type Config struct {
-	OpenSearchURL string `envconfig:"OPENSEARCH_URL"`
+	DatabaseURL string `envconfig:"DATABASE_URL"`
 }
 
 func main() {
-	openSearchURL, ifexists := os.LookupEnv("OPENSEARCH_URL")
+	databaseURL, ifexists := os.LookupEnv("DATABASE_URL")
 	if !ifexists {
-		log.Fatal("OPENSEARCH_URL is not set")
+		log.Fatal("DATABASE_URL is not set")
 	}
 	var repo product.Repository
 
 	for {
 		var err error
-		repo, err = product.NewOpenSearchRepository(openSearchURL)
+		repo, err = product.NewPostgresRepository(databaseURL)
 		if err != nil {
 			log.Println(err)
 			time.Sleep(2 * time.Second)

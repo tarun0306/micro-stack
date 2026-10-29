@@ -15,19 +15,21 @@ services:
       timeout: 5s
       retries: 10
 
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.4
+  product_db:
+    build:
+      context: ./product
+      dockerfile: db.dockerfile
     environment:
-      discovery.type: single-node
-      xpack.security.enabled: "false"
-      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      POSTGRES_DB: product
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     volumes:
-      - elasticsearch_v9_data:/usr/share/elasticsearch/data
+      - product_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
+      test: ["CMD-SHELL", "pg_isready -U postgres -d product"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   order_db:
     build:
@@ -64,9 +66,9 @@ services:
       context: .
       dockerfile: product/app.dockerfile
     environment:
-      OPENSEARCH_URL: http://elasticsearch:9200
+      DATABASE_URL: postgres://postgres:postgres@product_db:5432/product?sslmode=disable
     depends_on:
-      elasticsearch:
+      product_db:
         condition: service_healthy
     expose:
       - "8081"
@@ -120,5 +122,5 @@ services:
 
 volumes:
   account_db_data:
-  elasticsearch_v9_data:
+  product_db_data:
   order_db_data:

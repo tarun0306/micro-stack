@@ -1,7 +1,7 @@
 
 services:
   account_db: !reset null
-  elasticsearch: !reset null
+  product_db: !reset null
 
   account:
     image: ghcr.io/tarun0306/micro-stack-account:latest
@@ -18,9 +18,7 @@ services:
     image: ghcr.io/tarun0306/micro-stack-product:latest
     build: !reset null
     environment:
-      OPENSEARCH_URL: ${OPENSEARCH_URL:?OPENSEARCH_URL must be set}
-      OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME:?Username required}
-      OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD:?Password required}
+      DATABASE_URL: ${PRODUCT_DATABASE_URL:?PRODUCT_DATABASE_URL must be set}
     depends_on: !reset []
 
   order:

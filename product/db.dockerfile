@@ -1,8 +1,5 @@
-# The product service uses Elasticsearch; this legacy PostgreSQL image is not
-# referenced by docker-compose.yaml.
-FROM docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+FROM postgres:16-alpine
 
-ENV discovery.type=single-node
-ENV xpack.security.enabled=false
+COPY up.sql /docker-entrypoint-initdb.d/1.sql
 
-CMD ["elasticsearch"]
+CMD ["postgres"]
