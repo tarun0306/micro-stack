@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/opensearch-project/opensearch-go/v4"
@@ -34,20 +35,31 @@ type productDocument struct {
 }
 
 func NewOpenSearchRepository(url string) (Repository, error) {
+	username := os.Getenv("OPENSEARCH_USERNAME")
+	password := os.Getenv("OPENSEARCH_PASSWORD")
+
+	if username == "" || password == "" {
+		return nil, errors.New("OpenSearch username or password is missing")
+	}
+
 	client, err := opensearchapi.NewClient(opensearchapi.Config{
 		Client: opensearch.Config{
 			Addresses:      []string{url},
+			Username:       username,
+			Password:       password,
 			RequestTimeout: 5 * time.Second,
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
+
 	if _, err := client.Info(context.Background(), nil); err != nil {
 		_ = client.Close()
 		return nil, err
 	}
-	return &openSearchRepository{client}, nil
+
+	return &openSearchRepository{client: client}, nil
 }
 
 func (r *openSearchRepository) Close() {
