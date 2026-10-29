@@ -19,6 +19,8 @@ services:
     build: !reset null
     environment:
       OPENSEARCH_URL: ${OPENSEARCH_URL:?OPENSEARCH_URL must be set}
+      OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME:?Username required}
+      OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD:?Password required}
     depends_on: !reset []
 
   order:
