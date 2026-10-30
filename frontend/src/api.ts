@@ -45,12 +45,23 @@ export async function request<T>(
     },
     body: JSON.stringify({ query, variables }),
   })
-  const payload = (await response.json()) as GraphQLResponse<T>
+
+  const responseBody = await response.text()
+  let payload: GraphQLResponse<T>
+  try {
+    payload = responseBody ? JSON.parse(responseBody) as GraphQLResponse<T> : {}
+  } catch {
+    if (!response.ok) {
+      throw new Error(`The service is unavailable (${response.status}). Please try again.`)
+    }
+    throw new Error('The service returned an invalid response. Please try again.')
+  }
+
   if (!response.ok || payload.errors?.length) {
     if (response.status === 401 || response.status === 403) {
       throw new Error(`${response.status} Unauthorized`)
     }
-    throw new Error(payload.errors?.map((error) => error.message).join(', ') ?? 'Request failed')
+    throw new Error(payload.errors?.map((error) => error.message).join(', ') ?? `The service is unavailable (${response.status}). Please try again.`)
   }
   if (!payload.data) throw new Error('The API returned no data')
   return payload.data

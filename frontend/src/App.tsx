@@ -75,18 +75,18 @@ function App() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [checkingAccess, setCheckingAccess] = useState(() => (
     Boolean(localStorage.getItem('microstack_token')) &&
-    (window.location.pathname === '/login' || window.location.pathname === '/console')
+    window.location.pathname === '/console'
   ))
 
   useEffect(() => {
     const pathname = window.location.pathname
-    if (!authenticated || (pathname !== '/console' && pathname !== '/login')) return
+    if (!authenticated || pathname !== '/console') return
     let active = true
     request<{ viewer: Account }>(viewerQuery)
       .then((viewerData) => {
         if (!active) return
-        if (pathname === '/login' || viewerData.viewer.role === 'CUSTOMER') {
-          window.location.replace(viewerData.viewer.role === 'OPERATOR' ? '/console' : '/shop')
+        if (viewerData.viewer.role === 'CUSTOMER') {
+          window.location.replace('/shop')
           return
         }
         setCheckingAccess(false)
@@ -130,8 +130,8 @@ function App() {
 
   if (window.location.pathname === '/') return <Landing />
   if (window.location.pathname === '/shop') return <CustomerShop />
+  if (window.location.pathname === '/login') return <Login onLogin={(destination) => window.location.replace(destination)} />
   if (checkingAccess) return <div className="loading"><RefreshCw className="spin" size={22} /> Checking access…</div>
-  if (!authenticated && window.location.pathname !== '/login') return <Login onLogin={(destination) => window.location.replace(destination)} />
   if (!authenticated) return <Login onLogin={(destination) => window.location.replace(destination)} />
 
     function CustomerShop() {
